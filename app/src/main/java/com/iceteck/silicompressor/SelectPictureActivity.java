@@ -6,6 +6,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
+import android.media.MediaMetadataRetriever;
 import android.net.Uri;
 import android.os.AsyncTask;
 import android.os.Bundle;
@@ -18,6 +19,7 @@ import android.support.v7.app.AppCompatActivity;
 import android.support.v7.widget.Toolbar;
 import android.util.Log;
 import android.view.View;
+import android.widget.Button;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
@@ -51,6 +53,7 @@ public class SelectPictureActivity extends AppCompatActivity {
     TextView picDescription;
     private ImageView videoImageView;
     LinearLayout compressionMsg;
+    Button mCompressBtn;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -63,6 +66,7 @@ public class SelectPictureActivity extends AppCompatActivity {
         videoImageView = (ImageView) findViewById(R.id.videoImageView);
         picDescription = (TextView) findViewById(R.id.pic_description);
         compressionMsg = (LinearLayout) findViewById(R.id.compressionMsg);
+        mCompressBtn = findViewById(R.id.compress_btn);
 
         imageView.setOnClickListener(new View.OnClickListener() {
             @Override
@@ -75,6 +79,29 @@ public class SelectPictureActivity extends AppCompatActivity {
             @Override
             public void onClick(View view) {
                 requestPermissions(TYPE_VIDEO);
+            }
+        });
+
+        mCompressBtn.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                String root = Environment.getExternalStorageDirectory().getAbsolutePath() + File.separator;
+                File mFile = new File(root, "111.mp4");
+
+                //获取媒体比特率，位率
+                MediaMetadataRetriever retriever = new MediaMetadataRetriever();
+                retriever.setDataSource(mFile.getAbsolutePath());
+                String height = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT);
+                String width = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH);
+                String durStr = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION);
+                String bitrateString = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_BITRATE);
+
+
+                //compress and output new video specs
+                new VideoCompressAsyncTask(SelectPictureActivity.this).execute(mFile.getAbsolutePath(), root, bitrateString);
+//                    Uri videoContentUri = data.getData();
+//                    new VideoCompressAsyncTask(this).execute("false", videoContentUri.toString(), f.getPath());
+
             }
         });
     }
@@ -234,7 +261,7 @@ public class SelectPictureActivity extends AppCompatActivity {
         } else if (requestCode == REQUEST_TAKE_VIDEO && resultCode == RESULT_OK) {
             if (data != null && data.getData() != null) {
                 //create destination directory
-                File f = new File( Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MOVIES) + "/Silicompressor/videos");
+                File f = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MOVIES) + "/Silicompressor/videos");
                 if (f.mkdirs() || f.isDirectory()) {
                     //compress and output new video specs
                     //new VideoCompressAsyncTask(this).execute("true", mCurrentPhotoPath, f.getPath());
@@ -313,6 +340,7 @@ public class SelectPictureActivity extends AppCompatActivity {
         }
     }
 
+    private long time = 0;
 
     class VideoCompressAsyncTask extends AsyncTask<String, String, String> {
 
@@ -328,6 +356,7 @@ public class SelectPictureActivity extends AppCompatActivity {
             imageView.setImageDrawable(ContextCompat.getDrawable(mContext, R.drawable.ic_photo_camera_white_48px));
             compressionMsg.setVisibility(View.VISIBLE);
             picDescription.setVisibility(View.GONE);
+            time = System.currentTimeMillis();
         }
 
         @Override
@@ -335,23 +364,32 @@ public class SelectPictureActivity extends AppCompatActivity {
             String filePath = null;
             try {
 
-                //This bellow is just a temporary solution to test that method call works
-                boolean b = Boolean.parseBoolean(paths[0]);
-                if (b) {
-                    filePath = SiliCompressor.with(mContext).compressVideo(paths[1], paths[2]);
-                } else {
-                    Uri videoContentUri = Uri.parse(paths[1]);
-                    // Example using the bitrate and video size parameters
-                    /*filePath = SiliCompressor.with(mContext).compressVideo(
-                            videoContentUri,
-                            paths[2],
-                            1280,
-                            720,
-                            1500000);*/
-                    filePath = SiliCompressor.with(mContext).compressVideo(
-                            videoContentUri,
-                            paths[2]);
-                }
+//                //This bellow is just a temporary solution to test that method call works
+//                boolean b = Boolean.parseBoolean(paths[0]);
+//                if (b) {
+//                    filePath = SiliCompressor.with(mContext).compressVideo(paths[1], paths[2]);
+//                } else {
+//                    Uri videoContentUri = Uri.parse(paths[1]);
+//                    // Example using the bitrate and video size parameters
+//                    /*filePath = SiliCompressor.with(mContext).compressVideo(
+//                            videoContentUri,
+//                            paths[2],
+//                            1280,
+//                            720,
+//                            1500000);*/
+//                    filePath = SiliCompressor.with(mContext).compressVideo(
+//                            videoContentUri,
+//                            paths[2]);
+//                }
+                String bit = paths[2];
+                int valueInt = Integer.parseInt(bit) / 3;
+                filePath = SiliCompressor.with(mContext).compressVideo(
+                        paths[0],
+                        paths[1],
+                        1280,
+                        720,
+                        valueInt
+                );
 
 
             } catch (URISyntaxException e) {
@@ -367,6 +405,9 @@ public class SelectPictureActivity extends AppCompatActivity {
         @Override
         protected void onPostExecute(String compressedFilePath) {
             super.onPostExecute(compressedFilePath);
+
+            time = System.currentTimeMillis() - time;
+
             File imageFile = new File(compressedFilePath);
             float length = imageFile.length() / 1024f; // Size in KB
             String value;
@@ -374,11 +415,12 @@ public class SelectPictureActivity extends AppCompatActivity {
                 value = length / 1024f + " MB";
             else
                 value = length + " KB";
-            String text = String.format(Locale.US, "%s\nName: %s\nSize: %s", getString(R.string.video_compression_complete), imageFile.getName(), value);
+            String text = String.format(Locale.US, "%s\nName: %s\nSize: %s  time:%d", getString(R.string.video_compression_complete), imageFile.getName(), value, time);
             compressionMsg.setVisibility(View.GONE);
             picDescription.setVisibility(View.VISIBLE);
             picDescription.setText(text);
             Log.i("Silicompressor", "Path: " + compressedFilePath);
+            Log.i("Silicompressor", "time: " + time);
         }
     }
 
